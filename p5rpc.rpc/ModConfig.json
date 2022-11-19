@@ -1,0 +1,21 @@
+{
+  "ModId": "p5rpc.rpc",
+  "ModName": "Persona 5 Royal Rich Presence",
+  "ModAuthor": "AnimatedSwine37",
+  "ModVersion": "1.0.0",
+  "ModDescription": "Adds discord rich presence support to P5R",
+  "ModDll": "p5rpc.rpc.dll",
+  "ModIcon": "Preview.png",
+  "ModR2RManagedDll32": "x86/p5rpc.rpc.dll",
+  "ModR2RManagedDll64": "x64/p5rpc.rpc.dll",
+  "ModNativeDll32": "",
+  "ModNativeDll64": "",
+  "IsLibrary": false,
+  "ReleaseMetadataFileName": "p5rpc.rpc.ReleaseMetadata.json",
+  "PluginData": {},
+  "IsUniversalMod": false,
+  "ModDependencies": [ "reloaded.sharedlib.hooks", "Reloaded.Memory.SigScan.ReloadedII" ],
+  "OptionalDependencies": [],
+  "SupportedAppId": ["p5r.exe"],
+  "ProjectUrl": ""
+}
