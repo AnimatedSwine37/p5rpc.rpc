@@ -1,0 +1,10 @@
+[
+  {
+    "Major": 1,
+    "Minor": 1,
+    "Name":  "Name",
+    "Description":  "Doing stuff",
+    "State": "A state",
+    "ImageKey": "An image key"
+  }
+]

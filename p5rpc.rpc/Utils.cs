@@ -5,11 +5,12 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace p5rpc.rpc
 {
-    internal class Utils
+    internal static class Utils
     {
         private static ILogger _logger;
         private static Config _config;
@@ -56,5 +57,18 @@ namespace p5rpc.rpc
             return (nuint)(*(int*)ptrAddress) + ptrAddress + 4;
         }
 
+        public static T? LoadFile<T>(string fileName, string modDir)
+        {
+            try
+            {
+                 string json = File.ReadAllText(Path.Combine(modDir, fileName));
+                 return JsonSerializer.Deserialize<T>(json);
+            }
+            catch (Exception e)
+            {
+                LogError($"Error loading {Path.GetFileNameWithoutExtension(fileName)} information. Please make sure {fileName} exists in the mod's folder.", e);
+            }
+            return default(T);
+        }
     }
 }

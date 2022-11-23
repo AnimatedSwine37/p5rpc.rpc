@@ -6,12 +6,12 @@ using DiscordRPC;
 using p5rpc.rpc;
 using Reloaded.Memory.SigScan.ReloadedII.Interfaces;
 using Reloaded.Memory.Sigscan.Definitions.Structs;
-using static p5rpc.rpc.Sequence;
 using System.Diagnostics;
+using p5rpc.lib.interfaces;
 
 namespace p5rpc.rpc
 {
-    
+
     /// <summary>
     /// Your mod logic goes here.
     /// </summary>
@@ -47,16 +47,18 @@ namespace p5rpc.rpc
         /// The configuration of the currently executing mod.
         /// </summary>
         private readonly IModConfig _modConfig;
-    
+
         private readonly DiscordRpcClient _client;
 
-        private nuint* _sequenceInfoPtr;
-
-        private SequenceInfo* _sequenceInfo;
-
-        private SequenceInfo _lastSequence;
-
         private Timer _timer;
+
+        private IP5RLib _p5rLib;
+        private IFlowCaller _flowCaller;
+
+        private Field[]? _fields;
+        private Event[]? _events;
+        private Dictionary<string, string> _imageText;
+
 
         public Mod(ModContext context)
         {
@@ -69,67 +71,101 @@ namespace p5rpc.rpc
 
             Utils.Initialise(_logger, _configuration);
 
-            var startupScannerController = _modLoader.GetController<IStartupScanner>();
-            if (startupScannerController == null || !startupScannerController.TryGetTarget(out var startupScanner))
+            var libController = _modLoader.GetController<IP5RLib>();
+            if (libController == null || !libController.TryGetTarget(out _p5rLib!))
             {
-                Utils.LogError("Unable to access startup scanner, please make sure you have Reloaded.Memory.Sigscan installed. Aborting initialisation");
+                Utils.LogError("Could not get p5r library, please make sure you have p5rpc.lib installed.");
                 return;
             }
+            _flowCaller = _p5rLib.FlowCaller;
+
+            _fields = Utils.LoadFile<Field[]>("fields.json", _modLoader.GetDirectoryForModId(_modConfig.ModId));
+            _events = Utils.LoadFile<Event[]>("events.json", _modLoader.GetDirectoryForModId(_modConfig.ModId));
+            _imageText = Utils.LoadFile<Dictionary<string, string>>("imageText.json", _modLoader.GetDirectoryForModId(_modConfig.ModId)) ?? new Dictionary<string, string>();
+            if (_fields == null || _events == null)
+                return;
 
             _client = new DiscordRpcClient("1032265834111975424");
-
-            startupScanner.AddMainModuleScan("48 89 1D ?? ?? ?? ?? EB ?? 48 8B 1D ?? ?? ?? ?? 48 8B 7B ??", Initialise);
-        }
-
-        private void Initialise(PatternScanResult result)
-        {
-            if(!result.Found)
-            {
-                Utils.LogError("Unable to find sequence info, abotrting initialisation.");
-                return;
-            }
-
-            _sequenceInfoPtr = (nuint*)Utils.GetGlobalAddress((nuint)result.Offset + (nuint)Utils.BaseAddress + 3);
-            Utils.LogDebug($"Sequence info ptr address: 0x{(nuint)_sequenceInfoPtr:X}");
-
             _client.Initialize();
 
-            _timer = new Timer(InitTimer, null, 0, 100);
-        }
-
-        private void InitTimer(object? state)
-        {
-            if (*_sequenceInfoPtr == 0)
-                return;
-            _sequenceInfo = (*(SequenceInfo**)(*_sequenceInfoPtr + 72));
-            _timer.Dispose();
-            _timer = new Timer(Update, null, 0, 1);
-            Utils.LogDebug($"Sequence info address: 0x{*_sequenceInfoPtr + 72:X}");
+            _timer = new Timer(Update, null, 0, 5000);
         }
 
         private void Update(object? state)
         {
-            if (_lastSequence.CurrentSequence == _sequenceInfo->CurrentSequence && _lastSequence.LastSequence == _sequenceInfo->LastSequence && _lastSequence.Field0 == _sequenceInfo->Field0 && _lastSequence.Field3 == _sequenceInfo->Field3 && _lastSequence.Field4 == _sequenceInfo->Field4 && _lastSequence.Field5 == _sequenceInfo->Field5 && _lastSequence.EventInfo == _sequenceInfo->EventInfo) 
-                return;
-            _lastSequence = *_sequenceInfo;
-            Utils.LogDebug($"\nCurr {_sequenceInfo->CurrentSequence}\nLast {_sequenceInfo->LastSequence}\nField 0 {_sequenceInfo->Field0}\nField 3 {_sequenceInfo->Field3}" +
-                $"\nField 4 {_sequenceInfo->Field4}\nField 5 {_sequenceInfo->Field5}");
-            if (_sequenceInfo->EventInfo != (EventInfo*)0)
-            {
-                Utils.LogDebug($"Event {_sequenceInfo->EventInfo->Major}_{_sequenceInfo->EventInfo->Minor}");
-            }
+            Utils.LogDebug("Updating presence");
+            RichPresence presence = new RichPresence();
+            presence.Assets = new Assets();
 
-            _client.SetPresence(new RichPresence()
+            ProcessField(presence);
+            ProcessEvent(presence);
+
+            _client.SetPresence(presence);
+        }
+
+        private void ProcessField(RichPresence presence)
+        {
+            if (!_flowCaller.Ready())
+                return;
+            int fieldMajor = _flowCaller.FLD_GET_MAJOR();
+            int fieldMinor = _flowCaller.FLD_GET_MINOR();
+
+            Field? field = _fields.FirstOrDefault(f => f.Major == fieldMajor && f.Minor == fieldMinor);
+
+            Utils.LogDebug($"In field {fieldMajor}_{fieldMinor} ({(field != null ? field.Name : "undocumented")})");
+
+            string imageKey = "logo";
+            string imageText = "P5R Logo";
+            string description = "Roaming somewhere";
+            if (field != null)
             {
-                Details = "Playing the game",
-                State = "Very WIP RPC :D",
-                Assets = new Assets()
+                if (field.ImageKey != null)
                 {
-                    LargeImageKey = "logo",
-                    LargeImageText = "P5R Logo",
-                    //SmallImageKey = "logo"
+                    imageKey = field.ImageKey;
+                    imageText = _imageText.ContainsKey(imageKey) ? _imageText[imageKey] : "No image text found :(";
                 }
-            });
+                description = field.Description;
+                if (field.State != null)
+                    presence.State = field.State;
+            }
+            presence.Assets.LargeImageText = imageText;
+            presence.Assets.LargeImageKey = imageKey;
+            presence.Details = description;
+
+            if (field != null && field.InMetaverse)
+                ProcessMetaverse(presence, field);
+
+            if (field != null && field.InBattle)
+                ProcessBattle(presence, field);            
+        }
+
+        private void ProcessBattle(RichPresence presence, Field field)
+        {
+
+        }
+
+        private void ProcessMetaverse(RichPresence presence, Field field)
+        {
+            
+        }
+
+        private void ProcessEvent(RichPresence presence)
+        {
+            var sequence = _p5rLib.Sequencer.GetSequenceInfo();
+            if (sequence.EventInfo.InEvent())
+            {
+                Event eventInfo = _events.First(e => e.Major == sequence.EventInfo.Major && e.Minor == sequence.EventInfo.Minor);
+                Utils.LogDebug($"In event {sequence.EventInfo.Major}_{sequence.EventInfo.Minor} ({(eventInfo != null ? eventInfo.Name : "undocumented")})");
+                presence.Details = eventInfo.Description;
+                if (eventInfo.State != null)
+                    presence.State = eventInfo.State;
+                if (eventInfo.ImageKey != null)
+                {
+                    presence.Assets.LargeImageKey = eventInfo.ImageKey;
+                    presence.Assets.LargeImageText = _imageText.ContainsKey(eventInfo.ImageKey) ? _imageText[eventInfo.ImageKey] : "No image text found :(";
+
+                }
+            }
         }
 
         public override void Disposing()
