@@ -6,6 +6,17 @@ using System.Threading.Tasks;
 
 namespace p5rpc.rpc
 {
+    public enum TimeOfDay
+    {
+        Morning,
+        Lunchtime,
+        Afternoon,
+        Daytime,
+        After_School,
+        Evening,
+        Late_Night
+    }
+
     /// <summary>
     /// A class for getting data about fields and events to be displayed
     /// </summary>

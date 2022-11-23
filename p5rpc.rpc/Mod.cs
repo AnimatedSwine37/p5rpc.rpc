@@ -59,6 +59,11 @@ namespace p5rpc.rpc
         private Event[]? _events;
         private Dictionary<string, string> _imageText;
 
+        private Field _lastField;
+        private Event _lastEvent;
+        private List<string> _states = new();
+        private bool _stateChanged = false;
+        private RichPresence _presence;
 
         public Mod(ModContext context)
         {
@@ -84,34 +89,60 @@ namespace p5rpc.rpc
             _imageText = Utils.LoadFile<Dictionary<string, string>>("imageText.json", _modLoader.GetDirectoryForModId(_modConfig.ModId)) ?? new Dictionary<string, string>();
             if (_fields == null || _events == null)
                 return;
-
+            
             _client = new DiscordRpcClient("1032265834111975424");
             _client.Initialize();
+
+            _presence = new RichPresence();
+            _presence.Timestamps = Timestamps.Now;
+            _presence.Assets = new Assets();
 
             _timer = new Timer(Update, null, 0, 5000);
         }
 
         private void Update(object? state)
         {
-            Utils.LogDebug("Updating presence");
-            RichPresence presence = new RichPresence();
-            presence.Assets = new Assets();
-
-            ProcessField(presence);
-            ProcessEvent(presence);
-
-            _client.SetPresence(presence);
-        }
-
-        private void ProcessField(RichPresence presence)
-        {
             if (!_flowCaller.Ready())
                 return;
+            Utils.LogDebug("Updating presence");
+
+            ProcessField();
+
+            _client.SetPresence(_presence);
+        }
+
+        private void ProcessDetails()
+        {
+            DayOfWeek dayOfWeek = (DayOfWeek)_flowCaller.GET_DAYOFWEEK();
+            int month = _flowCaller.GET_MONTH();
+            int day = _flowCaller.GET_DAY();
+            TimeOfDay time = (TimeOfDay)_flowCaller.GET_TIME();
+            int weather = _flowCaller.GET_WEATHER();
+            
+            if(_stateChanged)
+            {
+                _stateChanged = false;
+                _states.Add("{dateInfo}");
+            }
+
+            if (_states.Count != 0)
+            {
+                if (_states[0] == "{dateInfo}")
+                    _presence.State = $"{dayOfWeek} {time.ToString().Replace("_", " ")} {month}/{day}";
+                else
+                    _presence.State = _states[0];
+                _states.Add(_states[0]);
+                _states.RemoveAt(0);
+            }
+        }
+
+        private void ProcessField()
+        {
             int fieldMajor = _flowCaller.FLD_GET_MAJOR();
             int fieldMinor = _flowCaller.FLD_GET_MINOR();
 
             Field? field = _fields.FirstOrDefault(f => f.Major == fieldMajor && f.Minor == fieldMinor);
-
+            
             Utils.LogDebug($"In field {fieldMajor}_{fieldMinor} ({(field != null ? field.Name : "undocumented")})");
 
             string imageKey = "logo";
@@ -119,50 +150,68 @@ namespace p5rpc.rpc
             string description = "Roaming somewhere";
             if (field != null)
             {
+                if(_lastField == null || (_lastField.Major != fieldMajor || _lastField.Minor != fieldMinor))
+                {
+                    _stateChanged = true;
+                    _states.Clear();
+                    if (field.State != null)
+                        _states.Add(field.State);
+                }
+                _lastField = field;
                 if (field.ImageKey != null)
                 {
                     imageKey = field.ImageKey;
                     imageText = _imageText.ContainsKey(imageKey) ? _imageText[imageKey] : "No image text found :(";
                 }
                 description = field.Description;
-                if (field.State != null)
-                    presence.State = field.State;
             }
-            presence.Assets.LargeImageText = imageText;
-            presence.Assets.LargeImageKey = imageKey;
-            presence.Details = description;
+            _presence.Assets.LargeImageText = imageText;
+            _presence.Assets.LargeImageKey = imageKey;
+            _presence.Details = description;
 
             if (field != null && field.InMetaverse)
-                ProcessMetaverse(presence, field);
+                ProcessMetaverse(field);
 
             if (field != null && field.InBattle)
-                ProcessBattle(presence, field);            
+                ProcessBattle(field);
+
+            ProcessEvent();
+            if (fieldMajor != -1 || fieldMinor != -1)
+                ProcessDetails();
+            else
+                _presence.State = null;
         }
 
-        private void ProcessBattle(RichPresence presence, Field field)
+        private void ProcessBattle(Field field)
         {
 
         }
 
-        private void ProcessMetaverse(RichPresence presence, Field field)
+        private void ProcessMetaverse(Field field)
         {
             
         }
 
-        private void ProcessEvent(RichPresence presence)
+        private void ProcessEvent()
         {
             var sequence = _p5rLib.Sequencer.GetSequenceInfo();
             if (sequence.EventInfo.InEvent())
             {
                 Event eventInfo = _events.First(e => e.Major == sequence.EventInfo.Major && e.Minor == sequence.EventInfo.Minor);
+                _lastEvent = eventInfo;
                 Utils.LogDebug($"In event {sequence.EventInfo.Major}_{sequence.EventInfo.Minor} ({(eventInfo != null ? eventInfo.Name : "undocumented")})");
-                presence.Details = eventInfo.Description;
-                if (eventInfo.State != null)
-                    presence.State = eventInfo.State;
+                _presence.Details = eventInfo.Description;
+                if (_lastEvent == null || (_lastEvent.Major != eventInfo.Major || _lastEvent.Minor != eventInfo.Minor))
+                {
+                    _stateChanged = true;
+                    _states.Clear();
+                    if(eventInfo.State != null)
+                        _states.Add(eventInfo.State);
+                }
                 if (eventInfo.ImageKey != null)
                 {
-                    presence.Assets.LargeImageKey = eventInfo.ImageKey;
-                    presence.Assets.LargeImageText = _imageText.ContainsKey(eventInfo.ImageKey) ? _imageText[eventInfo.ImageKey] : "No image text found :(";
+                    _presence.Assets.LargeImageKey = eventInfo.ImageKey;
+                    _presence.Assets.LargeImageText = _imageText.ContainsKey(eventInfo.ImageKey) ? _imageText[eventInfo.ImageKey] : "No image text found :(";
 
                 }
             }
