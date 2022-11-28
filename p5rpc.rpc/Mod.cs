@@ -3,11 +3,8 @@ using p5rpc.rpc.Template;
 using Reloaded.Hooks.ReloadedII.Interfaces;
 using Reloaded.Mod.Interfaces;
 using DiscordRPC;
-using p5rpc.rpc;
-using Reloaded.Memory.SigScan.ReloadedII.Interfaces;
-using Reloaded.Memory.Sigscan.Definitions.Structs;
-using System.Diagnostics;
 using p5rpc.lib.interfaces;
+using static p5rpc.lib.interfaces.Sequence;
 
 namespace p5rpc.rpc
 {
@@ -60,7 +57,8 @@ namespace p5rpc.rpc
         private Dictionary<string, string> _imageText;
 
         private Field _lastField;
-        private Event _lastEvent;
+        private EventInfo? _currentEvent;
+        private EventInfo? _lastEvent;
         private List<string> _states = new();
         private bool _stateChanged = false;
         private RichPresence _presence;
@@ -89,7 +87,7 @@ namespace p5rpc.rpc
             _imageText = Utils.LoadFile<Dictionary<string, string>>("imageText.json", _modLoader.GetDirectoryForModId(_modConfig.ModId)) ?? new Dictionary<string, string>();
             if (_fields == null || _events == null)
                 return;
-            
+
             _client = new DiscordRpcClient("1032265834111975424");
             _client.Initialize();
 
@@ -97,7 +95,14 @@ namespace p5rpc.rpc
             _presence.Timestamps = Timestamps.Now;
             _presence.Assets = new Assets();
 
+            _p5rLib.Sequencer.EventStarted += EventStarted;
+
             _timer = new Timer(Update, null, 0, 5000);
+        }
+
+        private void EventStarted(EventInfo eventInfo)
+        {
+            _currentEvent = eventInfo;
         }
 
         private void Update(object? state)
@@ -106,7 +111,28 @@ namespace p5rpc.rpc
                 return;
             Utils.LogDebug("Updating presence");
 
-            ProcessField();
+            int fieldMajor = _flowCaller.FLD_GET_MAJOR();
+            int fieldMinor = _flowCaller.FLD_GET_MINOR();
+            Field? field = ProcessField(fieldMajor, fieldMinor);
+
+            var sequence = _p5rLib.Sequencer.GetSequenceInfo();
+            
+            if ((fieldMajor != -1 || fieldMinor != -1) && (sequence.CurrentSequence != SequenceType.EVENT && sequence.CurrentSequence != SequenceType.EVENT_VIEWER))
+                _currentEvent = null; // Not in an event if it isn't -1_-1
+
+
+            if (field != null && field.InMetaverse)
+                ProcessMetaverse(field);
+
+            if (field != null && field.InBattle)
+                ProcessBattle(field);
+
+            ProcessEvent();
+            
+            if (field != null && (field.Major != -1 || field.Minor != -1) || _currentEvent != null)
+                ProcessDetails();
+            else
+                _presence.State = null;
 
             _client.SetPresence(_presence);
         }
@@ -118,8 +144,8 @@ namespace p5rpc.rpc
             int day = _flowCaller.GET_DAY();
             TimeOfDay time = (TimeOfDay)_flowCaller.GET_TIME();
             int weather = _flowCaller.GET_WEATHER();
-            
-            if(_stateChanged)
+
+            if (_stateChanged)
             {
                 _stateChanged = false;
                 _states.Add("{dateInfo}");
@@ -136,13 +162,10 @@ namespace p5rpc.rpc
             }
         }
 
-        private void ProcessField()
+        private Field? ProcessField(int fieldMajor, int fieldMinor)
         {
-            int fieldMajor = _flowCaller.FLD_GET_MAJOR();
-            int fieldMinor = _flowCaller.FLD_GET_MINOR();
-
             Field? field = _fields.FirstOrDefault(f => f.Major == fieldMajor && f.Minor == fieldMinor);
-            
+
             Utils.LogDebug($"In field {fieldMajor}_{fieldMinor} ({(field != null ? field.Name : "undocumented")})");
 
             string imageKey = "logo";
@@ -150,7 +173,7 @@ namespace p5rpc.rpc
             string description = "Roaming somewhere";
             if (field != null)
             {
-                if(_lastField == null || (_lastField.Major != fieldMajor || _lastField.Minor != fieldMinor))
+                if (_lastField == null || (_lastField.Major != fieldMajor || _lastField.Minor != fieldMinor))
                 {
                     _stateChanged = true;
                     _states.Clear();
@@ -169,17 +192,7 @@ namespace p5rpc.rpc
             _presence.Assets.LargeImageKey = imageKey;
             _presence.Details = description;
 
-            if (field != null && field.InMetaverse)
-                ProcessMetaverse(field);
-
-            if (field != null && field.InBattle)
-                ProcessBattle(field);
-
-            ProcessEvent();
-            if (fieldMajor != -1 || fieldMinor != -1)
-                ProcessDetails();
-            else
-                _presence.State = null;
+            return field;
         }
 
         private void ProcessBattle(Field field)
@@ -189,32 +202,49 @@ namespace p5rpc.rpc
 
         private void ProcessMetaverse(Field field)
         {
-            
+
         }
 
         private void ProcessEvent()
         {
-            var sequence = _p5rLib.Sequencer.GetSequenceInfo();
-            if (sequence.EventInfo.InEvent())
-            {
-                Event eventInfo = _events.First(e => e.Major == sequence.EventInfo.Major && e.Minor == sequence.EventInfo.Minor);
-                _lastEvent = eventInfo;
-                Utils.LogDebug($"In event {sequence.EventInfo.Major}_{sequence.EventInfo.Minor} ({(eventInfo != null ? eventInfo.Name : "undocumented")})");
-                _presence.Details = eventInfo.Description;
-                if (_lastEvent == null || (_lastEvent.Major != eventInfo.Major || _lastEvent.Minor != eventInfo.Minor))
-                {
-                    _stateChanged = true;
-                    _states.Clear();
-                    if(eventInfo.State != null)
-                        _states.Add(eventInfo.State);
-                }
-                if (eventInfo.ImageKey != null)
-                {
-                    _presence.Assets.LargeImageKey = eventInfo.ImageKey;
-                    _presence.Assets.LargeImageText = _imageText.ContainsKey(eventInfo.ImageKey) ? _imageText[eventInfo.ImageKey] : "No image text found :(";
+            if (_currentEvent == null)
+                return;
 
+            Event? eventInfo = _events.FirstOrDefault(e => e.Major == _currentEvent.Major && e.Minor == _currentEvent.Minor);
+            Utils.LogDebug($"In event {_currentEvent} ({(eventInfo != null ? eventInfo.Name : "undocumented")})");
+
+            int fieldMajor = _flowCaller.FLD_GET_PREV_MAJOR();
+            int fieldMinor = _flowCaller.FLD_GET_PREV_MINOR();
+
+            if (eventInfo == null)
+            {
+                _lastEvent = _currentEvent;
+                ProcessField(fieldMajor, fieldMinor);
+                return;
+            }
+            
+            _presence.Details = eventInfo.Description;
+            if (_lastEvent == null || (_currentEvent.Major != eventInfo.Major || _currentEvent.Minor != eventInfo.Minor))
+            {
+                _stateChanged = true;
+                _states.Clear();
+                if (eventInfo.State != null)
+                    _states.Add(eventInfo.State);
+            }
+            if (eventInfo.ImageKey != null)
+            {
+                _presence.Assets.LargeImageKey = eventInfo.ImageKey;
+                _presence.Assets.LargeImageText = _imageText.ContainsKey(eventInfo.ImageKey) ? _imageText[eventInfo.ImageKey] : "No image text found :(";
+            } else
+            {
+                Field? field = _fields.FirstOrDefault(f => f.Major == fieldMajor && f.Minor == fieldMinor);
+                if(field != null && field.ImageKey != null)
+                {
+                    _presence.Assets.LargeImageKey = field.ImageKey;
+                    _presence.Assets.LargeImageText = _imageText.ContainsKey(field.ImageKey) ? _imageText[field.ImageKey] : "No image text found :(";
                 }
             }
+            _lastEvent = _currentEvent;
         }
 
         public override void Disposing()
