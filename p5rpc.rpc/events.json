@@ -6,5 +6,12 @@
     "Description":  "Doing stuff",
     "State": "A state",
     "ImageKey": "An image key"
+  },
+  {
+    "Major": 712,
+    "Minor": 0,
+    "Name":  "First time at airsoft shop",
+    "Description":  "Looking for equipment with Ryuji",
+    "State": "At the Airsoft Shop"
   }
 ]

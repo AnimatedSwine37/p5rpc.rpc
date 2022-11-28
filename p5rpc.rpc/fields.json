@@ -6,6 +6,27 @@
     "Name":  "Title Screen"
   },
   {
+    "Major": 0,
+    "Minor": 100,
+    "Description": "Hacking the mainframe",
+    "State": "ダミーフィールド",
+    "Name":  "Test Field"
+  },
+  {
+    "Major": 1,
+    "Minor": 1,
+    "Description": "Roaming Station Square",
+    "Name":  "Station Square",
+    "ImageKey": "shibuya"
+  },
+  {
+    "Major": 1,
+    "Minor": 3,
+    "Description": "Roaming Central Street",
+    "Name":  "Central Street",
+    "ImageKey": "shibuya"
+  },
+  {
     "Major": 2,
     "Minor": 2,
     "Description": "Roaming the Classroom Building",
@@ -53,5 +74,26 @@
     "Description": "Relaxing in Leblanc",
     "Name":  "Leblanc",
     "ImageKey": "yongen-jaya"
+  },
+  {
+    "Major": 10,
+    "Minor": 2,
+    "Description": "Browsing the Airsoft Shop",
+    "Name":  "Airsoft Shop",
+    "ImageKey": "shibuya"
+  },
+  {
+    "Major": 151,
+    "Minor": 4,
+    "Description": "Exploring the Old Castle",
+    "Name":  "Old Castle 3F",
+    "InMetaverse": true
+  },
+  {
+    "Major": 162,
+    "Minor": 1,
+    "Description": "Preparing to enter the Laboratory",
+    "Name":  "Laboratory Entryway",
+    "InMetaverse": true
   }
 ]

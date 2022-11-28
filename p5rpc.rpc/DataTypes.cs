@@ -17,14 +17,20 @@ namespace p5rpc.rpc
         Late_Night
     }
 
-    /// <summary>
-    /// A class for getting data about fields and events to be displayed
-    /// </summary>
-    public class DataGetter
+    public enum PartyMember
     {
-        
+        None,
+        Joker,
+        Skull,
+        Mona,
+        Panther,
+        Fox,
+        Queen,
+        Noir,
+        Oracle,
+        Crow,
+        Violet
     }
-
 
     public class Field
     {

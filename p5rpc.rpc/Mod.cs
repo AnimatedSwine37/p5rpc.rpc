@@ -116,19 +116,15 @@ namespace p5rpc.rpc
             Field? field = ProcessField(fieldMajor, fieldMinor);
 
             var sequence = _p5rLib.Sequencer.GetSequenceInfo();
-            
+
             if ((fieldMajor != -1 || fieldMinor != -1) && (sequence.CurrentSequence != SequenceType.EVENT && sequence.CurrentSequence != SequenceType.EVENT_VIEWER))
                 _currentEvent = null; // Not in an event if it isn't -1_-1
-
-
-            if (field != null && field.InMetaverse)
-                ProcessMetaverse(field);
 
             if (field != null && field.InBattle)
                 ProcessBattle(field);
 
             ProcessEvent();
-            
+
             if (field != null && (field.Major != -1 || field.Minor != -1) || _currentEvent != null)
                 ProcessDetails();
             else
@@ -153,10 +149,21 @@ namespace p5rpc.rpc
 
             if (_states.Count != 0)
             {
-                if (_states[0] == "{dateInfo}")
-                    _presence.State = $"{dayOfWeek} {time.ToString().Replace("_", " ")} {month}/{day}";
-                else
-                    _presence.State = _states[0];
+                switch (_states[0])
+                {
+                    case "{dateInfo}":
+                        _presence.State = $"{dayOfWeek} {time.ToString().Replace("_", " ")} {month}/{day}";
+                        break;
+                    case "{playerLvl}":
+                        _presence.State = $"Joker level {_flowCaller.GET_PLAYER_LV(1, 0)}";
+                        break;
+                    case "{party}":
+                        _presence.State = GetPartyState();
+                        break;
+                    default:
+                        _presence.State = _states[0];
+                        break;
+                }
                 _states.Add(_states[0]);
                 _states.RemoveAt(0);
             }
@@ -179,6 +186,11 @@ namespace p5rpc.rpc
                     _states.Clear();
                     if (field.State != null)
                         _states.Add(field.State);
+                    if (field.InMetaverse)
+                    {
+                        _states.Add("{party}");
+                        _states.Add("{playerLvl}");
+                    }
                 }
                 _lastField = field;
                 if (field.ImageKey != null)
@@ -197,12 +209,34 @@ namespace p5rpc.rpc
 
         private void ProcessBattle(Field field)
         {
-
+            int encountId = _flowCaller.FLD_GET_ENCOUNTID(0);
+            Utils.LogDebug($"Current encounter is {encountId}");
         }
 
-        private void ProcessMetaverse(Field field)
+        private string GetPartyState()
         {
+            List<PartyMember> party = new List<PartyMember>();
+            for (int i = 0; i < 3; i++)
+            {
+                var member = (PartyMember)_flowCaller.GET_PARTY(i + 1);
+                if (member != PartyMember.Joker)
+                    party.Add(member);
+            }
 
+            if (party.Count == 0)
+                return "Alone";
+            else
+            {
+                string stateStr = $"With {party[0]}";
+                for (int i = 1; i < party.Count; i++)
+                {
+                    if (i != party.Count - 1)
+                        stateStr += $", {party[i]}";
+                    else
+                        stateStr += $", and {party[i]}";
+                }
+                return stateStr;
+            }
         }
 
         private void ProcessEvent()
@@ -222,7 +256,7 @@ namespace p5rpc.rpc
                 ProcessField(fieldMajor, fieldMinor);
                 return;
             }
-            
+
             _presence.Details = eventInfo.Description;
             if (_lastEvent == null || (_currentEvent.Major != eventInfo.Major || _currentEvent.Minor != eventInfo.Minor))
             {
@@ -235,10 +269,11 @@ namespace p5rpc.rpc
             {
                 _presence.Assets.LargeImageKey = eventInfo.ImageKey;
                 _presence.Assets.LargeImageText = _imageText.ContainsKey(eventInfo.ImageKey) ? _imageText[eventInfo.ImageKey] : "No image text found :(";
-            } else
+            }
+            else
             {
                 Field? field = _fields.FirstOrDefault(f => f.Major == fieldMajor && f.Minor == fieldMinor);
-                if(field != null && field.ImageKey != null)
+                if (field != null && field.ImageKey != null)
                 {
                     _presence.Assets.LargeImageKey = field.ImageKey;
                     _presence.Assets.LargeImageText = _imageText.ContainsKey(field.ImageKey) ? _imageText[field.ImageKey] : "No image text found :(";
