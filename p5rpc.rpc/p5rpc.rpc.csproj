@@ -52,15 +52,10 @@
 
   <ItemGroup>
     <PackageReference Include="DiscordRichPresence" Version="1.1.1.14" />
+    <PackageReference Include="p5rpc.lib.interfaces" Version="1.0.0" />
     <PackageReference Include="Reloaded.Memory.SigScan.ReloadedII.Interfaces" Version="1.2.0" />
     <PackageReference Include="Reloaded.Mod.Interfaces" Version="2.3.0" ExcludeAssets="runtime" />
     <PackageReference Include="Reloaded.SharedLib.Hooks" Version="1.9.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Reference Include="p5rpc.lib.interfaces">
-      <HintPath>..\..\p5rpc.lib\p5rpc.lib.interfaces\bin\Debug\net7.0\p5rpc.lib.interfaces.dll</HintPath>
-    </Reference>
   </ItemGroup>
 
 </Project>
